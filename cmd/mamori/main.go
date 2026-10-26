@@ -525,8 +525,16 @@ func summarizeDisclosures(rep *report.Report, data overlay.Data, checked map[str
 				s.Manual = append(s.Manual, p.Name)
 			}
 		}
+		cves := map[string]bool{}
+		for _, c := range d.CVEs {
+			cves[c] = true
+		}
 		for _, f := range rep.Findings {
-			if f.PatchThePlanet == d.ID {
+			hit := f.PatchThePlanet == d.ID
+			for _, id := range f.IDs {
+				hit = hit || cves[id]
+			}
+			if hit {
 				s.Affected++
 			}
 		}

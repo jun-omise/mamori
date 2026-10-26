@@ -2,7 +2,9 @@ package report
 
 import (
 	"encoding/json"
+
 	"fmt"
+	"github.com/jun-omise/mamori/internal/egress"
 	"io"
 	"sort"
 	"strings"
@@ -39,11 +41,12 @@ var msg = map[string][2]string{ // [ja, en]
 	"manual":                   {"手で確かめてください", "check by hand"},
 	"affected":                 {"当たった数", "findings"},
 	"runtimes":                 {"実行環境", "runtimes"},
-	"requests":                 {"回", "requests"},
+	"requests":                 {"回", "req."},
 	"reason.unreadable-format": {"この形式は読めません(bun.lockb は `bun install --save-text-lockfile` で bun.lock に)", "this lockfile format cannot be read (turn bun.lockb into bun.lock with `bun install --save-text-lockfile`)"},
 	"reason.not-parsed":        {"このファイルから何も読み取れませんでした(空・未対応の書き方・パッケージなし)", "nothing could be read from this file (empty, unsupported variant, or no packages)"},
 	"reason.no-lockfile":       {"依存は書かれていますが、隣にロックファイルが無いので、実際に入る版が分かりません", "dependencies are declared but there is no lockfile next to them, so the installed versions are unknown"},
 	"reason.tree-truncated":    {"リポジトリが大きく、GitHub がファイルの一覧を途中で切りました。一部のロックファイルを見ていない可能性があります", "GitHub truncated the file list of this large repository; some lockfiles may not have been seen"},
+	"reason.npm-unresolved":    {"package-lock.json に取得元(resolved)の無いパッケージがあり、OSV-Scanner はそれらを照らしません", "some packages in this package-lock.json have no `resolved` URL, and OSV-Scanner does not match them"},
 	"reason.submodule":         {"git のサブモジュールです。そのリポジトリを別に調べてください", "git submodule; scan its repository separately"},
 	"reason.fetch-failed":      {"ファイルを読めませんでした", "the file could not be downloaded"},
 	"reason.repo-failed":       {"リポジトリを読めませんでした", "the repository could not be read"},
@@ -84,8 +87,26 @@ func modeText(l Lang, mode string) string {
 	}
 }
 
-// JSON writes the report as indented JSON.
+// JSON writes the report as indented JSON. Empty lists are [] so a reader
+// never has to tell "none" from "missing".
 func JSON(w io.Writer, r *Report) error {
+	for _, l := range []*[]Finding{&r.Findings} {
+		if *l == nil {
+			*l = []Finding{}
+		}
+	}
+	if r.BlindSpots == nil {
+		r.BlindSpots = []BlindSpot{}
+	}
+	if r.Targets == nil {
+		r.Targets = []Target{}
+	}
+	if r.Egress == nil {
+		r.Egress = []egress.Contact{}
+	}
+	if r.Disclosure == nil {
+		r.Disclosure = []Disclosure{}
+	}
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	return enc.Encode(r)
@@ -279,7 +300,7 @@ func reason(l Lang, b BlindSpot) string {
 	if _, ok := msg["reason."+b.Code]; ok {
 		text := t(l, "reason."+b.Code)
 		switch b.Code {
-		case "fetch-failed", "repo-failed", "scan-failed":
+		case "fetch-failed", "repo-failed", "scan-failed", "npm-unresolved":
 			if b.Reason != "" {
 				text += ": " + b.Reason
 			}

@@ -7,6 +7,7 @@ package scan
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -219,6 +220,12 @@ func Dir(opts Options, target, root string, candidates []Candidate, locate func(
 		res.Files = append(res.Files, f)
 	}
 	for _, c := range candidates {
+		if c.Kind == "lockfile" && seen[c.Rel] {
+			if n := npmUnresolved(filepath.Join(root, filepath.FromSlash(c.Rel))); n > 0 {
+				res.BlindSpots = append(res.BlindSpots, report.BlindSpot{Target: target, Path: locate(c.Rel), Code: "npm-unresolved",
+					Reason: fmt.Sprintf("%d package(s) have no `resolved` registry URL; OSV-Scanner does not match them", n)})
+			}
+		}
 		if c.Kind == "lockfile" && !seen[c.Rel] {
 			res.BlindSpots = append(res.BlindSpots, report.BlindSpot{Target: target, Path: locate(c.Rel), Code: "not-parsed",
 				Reason: "OSV-Scanner returned nothing for this file (empty, unsupported variant, or no packages)"})
@@ -294,6 +301,43 @@ func (c *collector) WithAttrs(a []slog.Attr) slog.Handler {
 
 func (c *collector) WithGroup(name string) slog.Handler {
 	return &collector{inner: c.inner.WithGroup(name), state: c.state}
+}
+
+// npmUnresolved counts the packages in an npm lockfile that have no
+// `resolved` URL. OSV-Scanner skips them when matching (they look like
+// local or git dependencies), so they are a blind spot, not a pass.
+// Workspace links and bundled packages are not counted.
+func npmUnresolved(path string) int {
+	switch filepath.Base(path) {
+	case "package-lock.json", "npm-shrinkwrap.json":
+	default:
+		return 0
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return 0
+	}
+	var lock struct {
+		Packages map[string]struct {
+			Resolved string `json:"resolved"`
+			Link     bool   `json:"link"`
+			InBundle bool   `json:"inBundle"`
+			Version  string `json:"version"`
+		} `json:"packages"`
+	}
+	if json.Unmarshal(b, &lock) != nil {
+		return 0
+	}
+	n := 0
+	for key, pkg := range lock.Packages {
+		if key == "" || !strings.Contains(key, "node_modules/") || pkg.Link || pkg.InBundle || pkg.Version == "" {
+			continue
+		}
+		if pkg.Resolved == "" {
+			n++
+		}
+	}
+	return n
 }
 
 func relTo(root, p string) string {

@@ -127,3 +127,19 @@ func TestIgnoreFileIsAlwaysNamed(t *testing.T) {
 		t.Errorf("ignores = %v", res.Ignores)
 	}
 }
+
+// OSV-Scanner matches npm packages only when the lockfile records where they
+// were resolved from. Entries without it must be reported, not passed.
+func TestNpmEntriesWithoutResolvedAreBlindSpots(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "package-lock.json", `{"lockfileVersion":3,"packages":{
+		"":{"name":"x"},
+		"node_modules/a":{"version":"1.0.0","resolved":"https://registry.npmjs.org/a/-/a-1.0.0.tgz"},
+		"node_modules/b":{"version":"1.0.0"},
+		"node_modules/c":{"version":"1.0.0","integrity":"sha512-x"},
+		"node_modules/ws":{"link":true},
+		"packages/ws":{"version":"0.0.1"}}}`)
+	if n := npmUnresolved(filepath.Join(root, "package-lock.json")); n != 2 {
+		t.Errorf("unresolved = %d, want 2 (b and c; not the link, not the workspace source)", n)
+	}
+}
