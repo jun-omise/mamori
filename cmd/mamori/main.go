@@ -14,6 +14,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -29,6 +30,18 @@ import (
 
 // Version is set at release time with -ldflags "-X main.Version=...".
 var Version = "dev"
+
+// toolVersion is the release version, or for `go install` builds the module
+// version Go recorded in the binary (a tag or a pseudo-version).
+func toolVersion() string {
+	if Version != "dev" {
+		return Version
+	}
+	if bi, ok := debug.ReadBuildInfo(); ok && bi.Main.Version != "" && bi.Main.Version != "(devel)" {
+		return bi.Main.Version
+	}
+	return Version
+}
 
 func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) }
 
@@ -83,7 +96,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		}
 		return 0
 	case "version", "--version":
-		fmt.Fprintln(stdout, "mamori", Version)
+		fmt.Fprintln(stdout, "mamori", toolVersion())
 		return 0
 	case "help", "-h", "--help":
 		fmt.Fprint(stdout, usage)
@@ -201,7 +214,7 @@ func scanAll(f scanFlags, stderr io.Writer) (*report.Report, error) {
 	if f.verbose {
 		opts.Log = slog.NewTextHandler(stderr, nil)
 	}
-	rep := &report.Report{Tool: "mamori", Version: Version, Started: time.Now(), Mode: string(mode)}
+	rep := &report.Report{Tool: "mamori", Version: toolVersion(), Started: time.Now(), Mode: string(mode)}
 	progress := func(format string, a ...any) { fmt.Fprintf(stderr, format+"\n", a...) }
 
 	var netClient *http.Client

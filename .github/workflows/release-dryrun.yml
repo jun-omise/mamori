@@ -1,0 +1,63 @@
+name: release dry run
+
+# Rehearses what users do after a release, without publishing anything:
+# build every release file twice and compare (reproducible), check
+# SHA256SUMS, and `go install` on fresh macOS, Windows and Linux machines.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - run: go test ./...
+      - name: Build twice and compare
+        run: |
+          scripts/build-release.sh v0.0.0-dryrun dist
+          go clean -cache
+          scripts/build-release.sh v0.0.0-dryrun dist2 > /dev/null
+          diff dist/SHA256SUMS dist2/SHA256SUMS
+          echo "two builds are byte-identical"
+      - name: Verify checksums and run the Linux build
+        run: |
+          (cd dist && sha256sum -c SHA256SUMS)
+          ./dist/mamori-v0.0.0-dryrun-linux-amd64 version
+          { echo '### SHA256SUMS'; echo '```'; cat dist/SHA256SUMS; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+  install:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.3"
+      - name: go install, as a user would
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GOPRIVATE: github.com/jun-omise/mamori
+        run: |
+          # Only while the repository is private: let git read it with this
+          # run's read-only token. A public repository needs none of this.
+          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+          go install "github.com/jun-omise/mamori/cmd/mamori@${GITHUB_SHA}"
+          bin="$(go env GOPATH)/bin"
+          "$bin/mamori" version
+          "$bin/mamori" egress
+          set +e
+          "$bin/mamori" scan --runtimes --format markdown --out runtimes.md
+          code=$?
+          cat runtimes.md
+          test "$code" -ne 2
