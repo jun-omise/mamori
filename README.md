@@ -12,6 +12,17 @@ and the machine you run it on.**
 
 </div>
 
+<p align="center">
+  <a href="https://jun-omise.github.io/mamori/?lang=en">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://jun-omise.github.io/mamori/media/mamori-demo-en-dark.gif">
+      <img src="https://jun-omise.github.io/mamori/media/mamori-demo-en-light.gif" width="800" alt="30-second animation of how mamori works: what it reads, the gate every request passes, local matching, the three-part report, and exit codes">
+    </picture>
+  </a>
+  <br>
+  <sub>How mamori works, in 30 seconds · <a href="https://jun-omise.github.io/mamori/?lang=en">open the interactive version</a> (pause, chapters, try the gate)</sub>
+</p>
+
 **mamori** (守り, "protection") runs on macOS, Windows and Linux as a single file. It reads your
 lockfiles locally or straight from GitHub — without cloning and without write access — matches them
 against public vulnerability data **on your machine**, and always answers three questions:

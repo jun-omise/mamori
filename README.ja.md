@@ -11,6 +11,17 @@
 
 </div>
 
+<p align="center">
+  <a href="https://jun-omise.github.io/mamori/?lang=ja">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://jun-omise.github.io/mamori/media/mamori-demo-ja-dark.gif">
+      <img src="https://jun-omise.github.io/mamori/media/mamori-demo-ja-light.gif" width="800" alt="mamori の動きを30秒で見せるアニメーション:読むもの、すべての通信が通る門、手元での照合、3つに分けた報告、終了コード">
+    </picture>
+  </a>
+  <br>
+  <sub>30秒で見る mamori のしくみ · <a href="https://jun-omise.github.io/mamori/?lang=ja">さわれる版を開く</a>(一時停止・場面へのジャンプ・門を試す)</sub>
+</p>
+
 **mamori** は、macOS・Windows・Linux で1つのファイルとして動きます。ロックファイルを手元か GitHub から直接(clone せず、書き込みの権限も使わずに)読み、公開の脆弱性データと**手元で**照らします。結果は、いつも次の3つに答えます。
 
 1. **何を調べたか** — ファイル・パッケージの数・実行環境をすべて並べます。「問題なし」がどこまでの話かが分かります。
