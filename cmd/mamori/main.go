@@ -232,9 +232,15 @@ func scanAll(f scanFlags, stderr io.Writer) (*report.Report, error) {
 		}
 		progress("mamori: scanning %s", abs)
 		target := "local:" + abs
-		cands, err := scan.Walk(abs)
+		cands, skipped, unreadable, err := scan.Walk(abs)
 		if err != nil {
 			return nil, err
+		}
+		if skipped > 0 {
+			rep.Notes = append(rep.Notes, fmt.Sprintf("%s: %d folder(s) of installed copies (node_modules, .venv, venv, __pycache__, .git) were not walked; the lockfiles next to them were scanned", target, skipped))
+		}
+		for _, u := range unreadable {
+			rep.BlindSpots = append(rep.BlindSpots, report.BlindSpot{Target: target, Path: u, Code: "fetch-failed", Reason: "could not be opened"})
 		}
 		res, err := scan.Dir(opts, target, abs, cands, func(rel string) string { return rel })
 		tg := report.Target{Kind: "local", Name: abs, Files: res.Files}
@@ -381,8 +387,20 @@ func scanRepo(gh *ghread.Client, opts scan.Options, r ghread.Repo, rep *report.R
 	defer os.RemoveAll(dir)
 
 	var cands []scan.Candidate
+	skipped := 0
 	for _, e := range entries {
-		if e.Type != "blob" || skippedPath(e.Path) {
+		if e.Type == "commit" {
+			rep.BlindSpots = append(rep.BlindSpots, report.BlindSpot{Target: target, Path: e.Path, Code: "submodule",
+				Reason: "git submodule; scan its repository separately"})
+			continue
+		}
+		if e.Type != "blob" {
+			continue
+		}
+		if skippedPath(e.Path) {
+			if scan.Classify(path.Base(e.Path)) != "" {
+				skipped++
+			}
 			continue
 		}
 		kind := scan.Classify(path.Base(e.Path))
@@ -406,6 +424,9 @@ func scanRepo(gh *ghread.Client, opts scan.Options, r ghread.Repo, rep *report.R
 			}
 		}
 		cands = append(cands, c)
+	}
+	if skipped > 0 {
+		rep.Notes = append(rep.Notes, fmt.Sprintf("%s: %d lockfile(s) committed inside node_modules/.venv/venv were not scanned (installed copies)", target, skipped))
 	}
 	res, err := scan.Dir(opts, target, dir, cands, func(rel string) string { return rel })
 	tg.Files = res.Files
@@ -442,7 +463,7 @@ func checkOverlayPackages(rep *report.Report, data overlay.Data, packages []scan
 	reported := map[string]bool{}
 	for _, f := range rep.Findings {
 		for _, id := range f.IDs {
-			reported[strings.ToLower(f.Package)+"|"+f.Location+"|"+id] = true
+			reported[f.Target+"|"+strings.ToLower(f.Package)+"|"+f.Location+"|"+id] = true
 		}
 	}
 	for _, d := range data.Disclosures {
@@ -457,7 +478,7 @@ func checkOverlayPackages(rep *report.Report, data overlay.Data, packages []scan
 				checked[d.ID] = appendOnce(checked[d.ID], p.Name)
 				already := false
 				for _, cve := range d.CVEs {
-					if reported[strings.ToLower(pkg.Name)+"|"+pkg.Location+"|"+cve] {
+					if reported[pkg.Target+"|"+strings.ToLower(pkg.Name)+"|"+pkg.Location+"|"+cve] {
 						already = true
 					}
 				}
@@ -470,24 +491,13 @@ func checkOverlayPackages(rep *report.Report, data overlay.Data, packages []scan
 					fixed = p.Fixed
 				}
 				rep.Findings = append(rep.Findings, report.Finding{
-					Kind: "package", Target: targetOf(rep, pkg.Location), Location: pkg.Location,
+					Kind: "package", Target: pkg.Target, Location: pkg.Location,
 					Ecosystem: pkg.Ecosystem, Package: pkg.Name, Version: pkg.Version, IDs: d.CVEs, Severity: "critical",
 					Summary: d.Title + ": " + d.Summary, Fixed: fixed, PatchThePlanet: d.ID, Advice: d.Mitigation,
 				})
 			}
 		}
 	}
-}
-
-func targetOf(rep *report.Report, location string) string {
-	for _, t := range rep.Targets {
-		for _, f := range t.Files {
-			if f.Path == location {
-				return t.Kind + ":" + t.Name
-			}
-		}
-	}
-	return ""
 }
 
 func normalize(s string) string {

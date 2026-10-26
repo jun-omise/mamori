@@ -28,6 +28,7 @@ mamori scan --github owner/repo --format markdown --out report.md
 
 - **ロックファイル**:`bun.lock`・`package-lock.json`・`pnpm-lock.yaml`・`yarn.lock`・`uv.lock`・`poetry.lock`・`Pipfile.lock`・`requirements*.txt`・`Cargo.lock`・`go.mod`・`Gemfile.lock`・`composer.lock`、NuGet、Maven/Gradle など、OSV-Scanner が読めるもの。
 - **GitHub のリポジトリ(読むだけ)**:持ち主のリポジトリを一覧にし、ファイルの一覧を読み、ロックファイルだけを落とします(clone しません)。Dependabot 自身の警告の数も並べて出します。GitHub の依存グラフも読み、版の多くが範囲のままなら、GitHub がロックファイルを読めていない=Dependabot が静かでも安心できない、と知らせます。
+- **見ないフォルダ**:`node_modules`・`.venv`・`venv`・`__pycache__`・`.git` はインストール済みの写しなので中を見ず、隣のロックファイルを調べます。飛ばしたフォルダの数は報告に出します。GitHub のサブモジュールは「読めなかったもの」に出します。
 - **この PC の実行環境**:見つけられるすべての Node.js(PATH・nvm・nvm-windows・volta・fnm)、Bun、PHP、Envoy、Istio、Python と、その中の Brotli。Node.js は nodejs.org とも照らし、取りこぼしたセキュリティ修正と、保守の終わった系列を知らせます。
 - **[Patch the Planet](https://patchtheplanet.org/) の公開**:人が確かめたデータ([`overlay/patchtheplanet.json`](overlay/patchtheplanet.json))で、公開ごとに対象と直った版を対応づけています。サイトに新しい公開が出ると毎日の確認が issue を立て、人がデータを更新します。あなたの mamori がサイトを読みに行くことはありません。
 - **悪用が確認された脆弱性**:米 CISA の [Known Exploited Vulnerabilities](https://www.cisa.gov/known-exploited-vulnerabilities-catalog) にあるものは印を付け、先頭に出します。
@@ -58,11 +59,11 @@ mamori に要るのは**読む**権限だけです。[fine-grained のトーク�
 - Repository access:調べたいリポジトリ
 - Permissions:**Contents: Read-only**、**Metadata: Read-only**、必要なら **Dependabot alerts: Read-only**
 
-`MAMORI_GITHUB_TOKEN` に入れて使います。`GITHUB_TOKEN`・`GH_TOKEN`・`gh auth token` も読みますが、そのトークンが書き込みもできる場合は知らせます。トークンが無くても、公開リポジトリは1時間に60回まで読めます。
+`MAMORI_GITHUB_TOKEN` に入れて使います。`GITHUB_TOKEN`・`GH_TOKEN`・`gh auth token` も読みますが、そのトークンが書き込みもできる場合は知らせます。mamori に `gh` コマンドを動かさせたくない場合は `MAMORI_NO_GH_CLI=1` を設定してください。トークンが無くても、公開リポジトリは1時間に60回まで読めます。
 
 ## 出力と終了コード
 
-`--format text`(既定)・`markdown`(issue や PR 向け)・`json`。`--lang ja|en`。
+`--format text`(既定)・`markdown`(issue や PR 向け)・`json`。`--lang ja|en`。言語はシステムの設定から選びます。Windows では多くの場合 `LANG` が無く英語になるので、日本語で見るときは `--lang ja` を付けてください。
 
 | 終了コード | 意味 |
 |---|---|

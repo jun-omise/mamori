@@ -34,6 +34,9 @@ mamori scan --github owner/repo --format markdown --out report.md
   the lockfiles (no clone), and reports Dependabot's own alert count next to mamori's findings. It also
   reads GitHub's dependency graph: when most versions there are ranges, GitHub is not reading your
   lockfile, so a quiet Dependabot means little — mamori says so.
+- **Folders it does not walk**: `node_modules`, `.venv`, `venv`, `__pycache__` and `.git` hold installed
+  copies; the lockfile next to them is scanned instead, and the report counts what was skipped. Git
+  submodules on GitHub are listed as blind spots.
 - **Runtimes on this machine**: every Node.js it can find (PATH, nvm, nvm-windows, volta, fnm), Bun,
   PHP, Envoy, Istio, Python and the Brotli packages installed in it. Node.js is also checked against
   nodejs.org for missed security releases and end-of-life lines.
@@ -78,12 +81,13 @@ mamori only needs to **read**. Create a
   **Dependabot alerts: Read-only**
 
 and set it as `MAMORI_GITHUB_TOKEN`. mamori also picks up `GITHUB_TOKEN`, `GH_TOKEN`, or
-`gh auth token`, and tells you when that token could write. Without a token, public repositories
+`gh auth token` (set `MAMORI_NO_GH_CLI=1` to stop it from running `gh`), and tells you when that
+token could write. Without a token, public repositories
 can be read at 60 requests per hour.
 
 ## Output and exit codes
 
-`--format text` (default), `markdown` (for issues and pull requests) or `json`. `--lang ja|en`.
+`--format text` (default), `markdown` (for issues and pull requests) or `json`. `--lang ja|en`; the default follows the system language (on Windows `LANG` is usually unset, so pass `--lang ja` for Japanese).
 
 | Exit | Meaning |
 |---|---|

@@ -80,8 +80,10 @@ var Unreadable = map[string]string{
 // apply to the scan, so mamori always names it in the report.
 const IgnoreFile = "osv-scanner.toml"
 
-// Skipped directories are never walked.
-var Skipped = map[string]bool{"node_modules": true, ".git": true, "vendor": true, ".venv": true, "venv": true, "dist": true, "build": true, "__pycache__": true}
+// Skipped directories hold installed copies of dependencies (or git's own
+// data). They are not walked; the lockfile next to them is what is scanned.
+// Every skipped folder is counted in the report.
+var Skipped = map[string]bool{"node_modules": true, ".git": true, ".venv": true, "venv": true, "__pycache__": true}
 
 // Candidate is a file found on disk that matters to the scan.
 type Candidate struct {
@@ -109,26 +111,32 @@ func Classify(name string) string {
 	return ""
 }
 
-// Walk lists the candidates under root.
-func Walk(root string) ([]Candidate, error) {
-	var out []Candidate
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+// Walk lists the candidates under root and how many folders it skipped
+// (see Skipped) or could not open.
+func Walk(root string) (cands []Candidate, skipped int, unreadable []string, err error) {
+	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			return nil // unreadable entries are reported by the caller as missing
+			if path != root {
+				rel, _ := filepath.Rel(root, path)
+				unreadable = append(unreadable, filepath.ToSlash(rel))
+				return nil
+			}
+			return err
 		}
 		if d.IsDir() {
-			if path != root && (Skipped[d.Name()] || strings.HasPrefix(d.Name(), ".")) {
+			if path != root && Skipped[d.Name()] {
+				skipped++
 				return filepath.SkipDir
 			}
 			return nil
 		}
 		if k := Classify(d.Name()); k != "" {
 			rel, _ := filepath.Rel(root, path)
-			out = append(out, Candidate{Rel: filepath.ToSlash(rel), Kind: k})
+			cands = append(cands, Candidate{Rel: filepath.ToSlash(rel), Kind: k})
 		}
 		return nil
 	})
-	return out, err
+	return cands, skipped, unreadable, err
 }
 
 // Result is what one scanned root produced.
@@ -144,7 +152,7 @@ type Result struct {
 
 // Package is one resolved package from a lockfile.
 type Package struct {
-	Ecosystem, Name, Version, Location string
+	Target, Ecosystem, Name, Version, Location string
 }
 
 // Dir scans the lockfiles under root. target names the scan in the report
@@ -205,7 +213,7 @@ func Dir(opts Options, target, root string, candidates []Candidate, locate func(
 			if f.Ecosystem == "" {
 				f.Ecosystem = pv.Package.Ecosystem
 			}
-			res.Packages = append(res.Packages, Package{Ecosystem: pv.Package.Ecosystem, Name: pv.Package.Name, Version: pv.Package.Version, Location: locate(rel)})
+			res.Packages = append(res.Packages, Package{Target: target, Ecosystem: pv.Package.Ecosystem, Name: pv.Package.Name, Version: pv.Package.Version, Location: locate(rel)})
 			res.Findings = append(res.Findings, findings(target, locate(rel), pv)...)
 		}
 		res.Files = append(res.Files, f)

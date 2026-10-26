@@ -49,12 +49,16 @@ type Entry struct {
 var ErrNotFound = errors.New("not found or no access")
 
 // TokenFromEnv finds a token: MAMORI_GITHUB_TOKEN, GITHUB_TOKEN, GH_TOKEN,
-// then `gh auth token`. source says where it came from ("" when none).
+// then `gh auth token` (skipped when MAMORI_NO_GH_CLI is set). source says
+// where it came from ("" when none).
 func TokenFromEnv() (token, source string) {
 	for _, k := range []string{"MAMORI_GITHUB_TOKEN", "GITHUB_TOKEN", "GH_TOKEN"} {
 		if v := strings.TrimSpace(os.Getenv(k)); v != "" {
 			return v, k
 		}
+	}
+	if os.Getenv("MAMORI_NO_GH_CLI") != "" {
+		return "", ""
 	}
 	if gh, err := exec.LookPath("gh"); err == nil {
 		out, err := exec.Command(gh, "auth", "token").Output()

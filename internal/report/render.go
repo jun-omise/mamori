@@ -44,6 +44,7 @@ var msg = map[string][2]string{ // [ja, en]
 	"reason.not-parsed":        {"このファイルから何も読み取れませんでした(空・未対応の書き方・パッケージなし)", "nothing could be read from this file (empty, unsupported variant, or no packages)"},
 	"reason.no-lockfile":       {"依存は書かれていますが、隣にロックファイルが無いので、実際に入る版が分かりません", "dependencies are declared but there is no lockfile next to them, so the installed versions are unknown"},
 	"reason.tree-truncated":    {"リポジトリが大きく、GitHub がファイルの一覧を途中で切りました。一部のロックファイルを見ていない可能性があります", "GitHub truncated the file list of this large repository; some lockfiles may not have been seen"},
+	"reason.submodule":         {"git のサブモジュールです。そのリポジトリを別に調べてください", "git submodule; scan its repository separately"},
 	"reason.fetch-failed":      {"ファイルを読めませんでした", "the file could not be downloaded"},
 	"reason.repo-failed":       {"リポジトリを読めませんでした", "the repository could not be read"},
 	"reason.graph-blind":       {"GitHub の依存グラフはこのリポジトリのロックファイルを読めていません(版が範囲のまま)。Dependabot の警告が少なくても安全とは言えません", "GitHub's dependency graph is not reading this repository's lockfile (versions are still ranges), so a quiet Dependabot does not mean safe"},

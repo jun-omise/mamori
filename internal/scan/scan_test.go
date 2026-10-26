@@ -26,11 +26,15 @@ func TestWalkClassifiesAndSkips(t *testing.T) {
 	write(t, root, "old/bun.lockb", "\x00")
 	write(t, root, "tools/requirements-dev.txt", "a==1\n")
 	write(t, root, "web/node_modules/x/package-lock.json", `{}`)
-	write(t, root, ".hidden/yarn.lock", ``)
+	write(t, root, ".devcontainer/yarn.lock", ``)
+	write(t, root, "desktop/build/npm/package-lock.json", `{}`)
 
-	got, err := Walk(root)
+	got, skipped, _, err := Walk(root)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if skipped != 1 {
+		t.Errorf("skipped = %d, want 1 (node_modules)", skipped)
 	}
 	kinds := map[string]string{}
 	for _, c := range got {
@@ -39,6 +43,9 @@ func TestWalkClassifiesAndSkips(t *testing.T) {
 	want := map[string]string{
 		"web/package.json": "manifest", "web/bun.lock": "lockfile", "api/pyproject.toml": "manifest",
 		"old/bun.lockb": "unreadable", "tools/requirements-dev.txt": "lockfile",
+		// Hidden folders and build outputs can hold real lockfiles; only
+		// installed copies (node_modules) are skipped, and that is counted.
+		".devcontainer/yarn.lock": "lockfile", "desktop/build/npm/package-lock.json": "lockfile",
 	}
 	for k, v := range want {
 		if kinds[k] != v {
@@ -46,7 +53,7 @@ func TestWalkClassifiesAndSkips(t *testing.T) {
 		}
 	}
 	if len(kinds) != len(want) {
-		t.Errorf("node_modules and hidden folders must be skipped; got %v", kinds)
+		t.Errorf("only node_modules should be skipped; got %v", kinds)
 	}
 }
 
@@ -86,7 +93,7 @@ func TestMissingDatabaseIsABlindSpotNotAPass(t *testing.T) {
     "node_modules/left-pad": {"version": "1.0.0"}
   }
 }`)
-	cands, _ := Walk(root)
+	cands, _, _, _ := Walk(root)
 	res, err := Dir(Options{Mode: StrictOffline, CacheDir: t.TempDir()}, "t", root, cands, func(s string) string { return s })
 	if err != nil {
 		t.Fatal(err)
@@ -108,7 +115,7 @@ func TestMissingDatabaseIsABlindSpotNotAPass(t *testing.T) {
 func TestIgnoreFileIsAlwaysNamed(t *testing.T) {
 	root := t.TempDir()
 	write(t, root, "osv-scanner.toml", "[[IgnoredVulns]]\nid = \"X\"\n\n[[IgnoredVulns]]\nid = \"Y\"\n")
-	cands, _ := Walk(root)
+	cands, _, _, _ := Walk(root)
 	if len(cands) != 1 || cands[0].Kind != "config" {
 		t.Fatalf("candidates = %+v", cands)
 	}
