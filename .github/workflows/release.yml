@@ -1,0 +1,56 @@
+name: release
+
+# Pushing a tag such as v0.1.0 builds every platform, writes SHA256SUMS,
+# records signed build provenance, and creates a DRAFT release. A person
+# reviews the draft and publishes it.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - run: go test ./...
+      - name: Build (reproducible: no cgo, trimmed paths, no build id)
+        run: |
+          set -euo pipefail
+          mkdir dist
+          for t in darwin/arm64 darwin/amd64 windows/amd64 windows/arm64 linux/amd64 linux/arm64; do
+            os=${t%/*}; arch=${t#*/}; ext=""
+            if [ "$os" = windows ]; then ext=.exe; fi
+            CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath -buildvcs=false \
+              -ldflags "-s -w -buildid= -X main.Version=${GITHUB_REF_NAME}" \
+              -o "dist/mamori-${GITHUB_REF_NAME}-${os}-${arch}${ext}" ./cmd/mamori
+          done
+          (cd dist && sha256sum mamori-* > SHA256SUMS)
+          cat dist/SHA256SUMS
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/mamori-*
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > notes.md <<EOF
+          Verify before running:
+
+          \`\`\`
+          gh attestation verify mamori-${GITHUB_REF_NAME}-<os>-<arch> --repo ${GITHUB_REPOSITORY}
+          shasum -a 256 -c SHA256SUMS --ignore-missing
+          \`\`\`
+
+          Built with $(go version | cut -d' ' -f3) from commit ${GITHUB_SHA}.
+          EOF
+          gh release create "$GITHUB_REF_NAME" dist/* --draft --title "mamori ${GITHUB_REF_NAME}" --notes-file notes.md

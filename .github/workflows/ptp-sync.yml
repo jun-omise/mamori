@@ -1,0 +1,44 @@
+name: patch-the-planet sync
+
+# Daily: compare patchtheplanet.org with overlay/patchtheplanet.json and open
+# an issue when something new appears. It never edits the data itself; a
+# person maps each disclosure to products and fixed versions in a PR.
+on:
+  schedule:
+    - cron: "17 0 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - id: sync
+        run: |
+          set +e
+          go run ./tools/ptpsync > body.md
+          code=$?
+          cat body.md
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          # 1 means the site could not be read or parsed: fail loudly.
+          test "$code" -ne 1
+      - if: steps.sync.outputs.code == '10'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="Patch the Planet: new disclosures to review"
+          open=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq 'length')
+          if [ "$open" = "0" ]; then
+            gh issue create --title "$title" --body-file body.md
+          else
+            echo "An issue is already open."
+          fi

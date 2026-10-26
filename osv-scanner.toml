@@ -1,0 +1,6 @@
+# Advisories this repository deliberately does not act on. mamori lists this
+# file in every report that it affects, so the exclusion is never silent.
+
+[[IgnoredVulns]]
+id = "GO-2026-5932"
+reason = "Deprecation notice for golang.org/x/crypto/openpgp with no fixed version. mamori does not import that package: `go list -deps ./... | grep '^golang.org/x/crypto/openpgp'` is empty (the openpgp code in the build is github.com/ProtonMail/go-crypto/openpgp, a maintained fork)."

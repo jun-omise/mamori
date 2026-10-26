@@ -1,0 +1,102 @@
+{
+  "schema": 1,
+  "source": "https://patchtheplanet.org/",
+  "reviewed": "2026-10-26",
+  "note": "Curated from the public disclosure pages. Updated by a reviewed pull request; mamori never scrapes patchtheplanet.org on the user's machine.",
+  "disclosures": [
+    {
+      "id": "brotli",
+      "title": "Brotli decoder vulnerability",
+      "cves": [
+        "CVE-2026-111497"
+      ],
+      "url": "https://patchtheplanet.org/brotli",
+      "updated": "2026-10-23",
+      "summary": "Crafted Brotli-compressed data can corrupt memory and allow remote code execution in software that decodes untrusted Brotli data.",
+      "mitigation": "Update to a fixed release. Until then, reject Brotli (Content-Encoding: br) before any decoder runs, disable automatic Brotli decompression in HTTP clients, and pause untrusted Brotli file processing.",
+      "products": [
+        {
+          "name": "Node.js",
+          "runtime": "node",
+          "branch": "major",
+          "fixed": [
+            "22.23.4",
+            "24.22.1",
+            "26.12.1"
+          ],
+          "note": "Use a supported release line."
+        },
+        {
+          "name": "Bun",
+          "runtime": "bun",
+          "branch": "none",
+          "fixed": [
+            "1.4.4"
+          ]
+        },
+        {
+          "name": "Google Brotli (Python binding)",
+          "package": {
+            "ecosystem": "PyPI",
+            "name": "Brotli"
+          },
+          "branch": "minor",
+          "fixed": [
+            "1.0.10",
+            "1.1.1",
+            "1.2.1"
+          ]
+        },
+        {
+          "name": "Envoy Proxy",
+          "runtime": "envoy",
+          "branch": "minor",
+          "fixed": [
+            "1.36.12",
+            "1.37.8",
+            "1.38.6",
+            "1.39.3",
+            "1.40.0"
+          ],
+          "note": "1.36 is unsupported upstream; move to a supported branch."
+        },
+        {
+          "name": "Istio",
+          "runtime": "istio",
+          "branch": "minor",
+          "fixed": [
+            "1.29.9",
+            "1.30.6",
+            "1.31.2"
+          ],
+          "note": "1.29 is end of life; move to a supported line."
+        }
+      ]
+    },
+    {
+      "id": "php2shell",
+      "title": "php2shell: critical PHP vulnerabilities",
+      "cves": [
+        "CVE-2026-109618",
+        "CVE-2026-109619"
+      ],
+      "url": "https://php2shell.com/",
+      "updated": "2026-10-26",
+      "summary": "Two PHP engine flaws can let unauthenticated attackers execute code as the PHP worker.",
+      "mitigation": "Upgrading PHP is the only complete fix. Restart PHP-FPM, Apache and long-running workers after upgrading.",
+      "products": [
+        {
+          "name": "PHP",
+          "runtime": "php",
+          "branch": "minor",
+          "fixed": [
+            "8.2.35",
+            "8.3.36",
+            "8.4.27",
+            "8.5.12"
+          ]
+        }
+      ]
+    }
+  ]
+}

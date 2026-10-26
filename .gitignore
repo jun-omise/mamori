@@ -1,0 +1,6 @@
+/dist/
+/mamori
+/mamori.exe
+*.out
+scan.md
+runtimes.md
