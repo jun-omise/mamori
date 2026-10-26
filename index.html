@@ -1,0 +1,545 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="How mamori, a read-only vulnerability scanner, works — in 30 seconds.">
+<title>mamori のしくみ</title>
+<meta property="og:title" content="How mamori works">
+<meta property="og:description" content="A read-only vulnerability scanner for your dependencies, your GitHub repositories and this machine — in 30 seconds.">
+<meta property="og:image" content="https://jun-omise.github.io/mamori/media/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<style>
+*,*::before,*::after{box-sizing:border-box}[hidden]{display:none!important}body{margin:0}a{color:var(--indigo)}
+
+/* Layout: one 16:9 "screen" that plays like a 30-second video, a control strip, then two try-it tools. */
+:root {
+  --paper: #eef2f7;   /* page ground, cool grey biased to indigo */
+  --stage: #ffffff;   /* the screen */
+  --ink: #142238;     /* text */
+  --muted: #5b6a82;
+  --line: #d3dbe6;
+  --chip: #e6ecf4;
+  --indigo: #2b4f86;  /* accent: 藍 */
+  --ok: #1d8569;
+  --bad: #c0412c;
+  --warn: #a8701a;
+  --display: "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
+  --body: "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #0a101b; --stage: #101a2b; --ink: #e4ebf5; --muted: #93a2b9; --line: #24324a;
+    --chip: #18243a; --indigo: #8db0e8; --ok: #4fc3a0; --bad: #f07b64; --warn: #e2b15d; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #0a101b; --stage: #101a2b; --ink: #e4ebf5; --muted: #93a2b9; --line: #24324a;
+  --chip: #18243a; --indigo: #8db0e8; --ok: #4fc3a0; --bad: #f07b64; --warn: #e2b15d; color-scheme: dark;
+}
+body {
+  background: var(--paper); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.7;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 28px 48px;
+}
+.wrap { max-width: 1040px; margin: 0 auto; display: grid; gap: 18px; }
+header.top { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 16px; }
+header.top h1 { font-family: var(--display); font-weight: 900; font-size: clamp(22px, 3.2vw, 30px); margin: 0; letter-spacing: .01em; text-wrap: balance; }
+header.top p { margin: 0; color: var(--muted); font-size: 14px; }
+.ja, .en { display: none; }
+[data-lang="ja"] .ja, [data-lang="en"] .en { display: revert; }
+
+/* ---------- the screen ---------- */
+.stage {
+  position: relative; width: 100%; max-width: 100%; aspect-ratio: 16 / 9; background: var(--stage);
+  border: 1px solid var(--line); border-radius: 14px; overflow: hidden; container-type: inline-size;
+}
+.scene, .caption { font-size: 1.9cqw; line-height: 1.45; }
+.scene { position: absolute; inset: 0; padding: 5cqw 6cqw 8cqw; opacity: 0; visibility: hidden; }
+.scene.on { visibility: visible; }
+.a { will-change: opacity, transform; }
+.mono { font-family: var(--mono); }
+.eyebrow { font-family: var(--mono); font-size: .78em; letter-spacing: .14em; text-transform: uppercase; color: var(--indigo); }
+.big { font-family: var(--display); font-weight: 900; font-size: 3.1em; line-height: 1.15; margin: 0; letter-spacing: .01em; }
+.h { font-family: var(--display); font-weight: 700; font-size: 1.75em; line-height: 1.3; margin: .2em 0 0; text-wrap: balance; }
+.sub { color: var(--muted); margin: .4em 0 0; }
+.chip { display: inline-flex; align-items: center; gap: .45em; background: var(--chip); border-radius: 999px; padding: .25em .8em; font-size: .9em; white-space: nowrap; }
+.dot { width: .6em; height: .6em; border-radius: 50%; background: currentColor; display: inline-block; flex: none; }
+.ok { color: var(--ok); } .bad { color: var(--bad); } .warn { color: var(--warn); } .muted { color: var(--muted); }
+
+/* scene 1 */
+.s1 { display: grid; align-content: center; gap: 1.6cqw; }
+.s1 .mark { display: flex; align-items: baseline; gap: .5em; }
+.s1 .kanji { font-family: var(--display); font-weight: 700; font-size: 1.6em; color: var(--indigo); }
+.q { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1.4cqw; margin-top: 1.6cqw; }
+.q > div { border-top: 2px solid var(--indigo); padding-top: .6em; }
+.q b { display: block; font-size: 1.05em; }
+.q span { color: var(--muted); font-size: .9em; }
+
+/* scene 2 */
+.s2 .grid { position: absolute; inset: 15cqw 6cqw 8cqw; display: grid; grid-template-columns: 1fr 1.1fr; gap: 3cqw; align-items: center; }
+.sources { display: grid; gap: 1.1cqw; }
+.src { border: 1px solid var(--line); border-radius: 10px; padding: .6em .9em; background: var(--stage); }
+.src b { display: block; }
+.src .mono { font-size: .82em; color: var(--muted); }
+.core { position: relative; border: 2px solid var(--indigo); border-radius: 14px; padding: 1.2em; text-align: center; }
+.core .name { font-family: var(--display); font-weight: 900; font-size: 2em; }
+.core .chips { display: flex; flex-wrap: wrap; justify-content: center; gap: .5em; margin-top: .6em; }
+
+/* scene 3: the gate */
+.s3 .field { position: absolute; inset: 15cqw 4cqw 9cqw; }
+.pc { position: absolute; left: 0; top: 0; bottom: 0; width: 30%; border: 2px solid var(--indigo); border-radius: 12px; padding: .7em; }
+.pc .lock { position: absolute; left: .7em; right: .7em; bottom: .7em; border: 1px dashed var(--line); border-radius: 8px; padding: .45em .6em; font-size: .86em; }
+.gate { position: absolute; left: 47%; top: -1.2cqw; bottom: 0; width: .8cqw; background: var(--indigo); border-radius: 4px; }
+.gate-label { position: absolute; left: 41%; top: -3.6cqw; width: 18%; text-align: center; font-size: .82em; color: var(--indigo); font-weight: 700; }
+.hosts { position: absolute; right: 0; top: 0; bottom: 0; width: 34%; display: grid; align-content: space-around; }
+.host { font-family: var(--mono); font-size: .82em; border: 1px solid var(--line); border-radius: 8px; padding: .3em .55em; overflow-wrap: anywhere; }
+.pkt { position: absolute; left: 0; transform: translateY(-50%); font-family: var(--mono); font-size: .8em; background: var(--chip); border-radius: 6px; padding: .15em .5em; white-space: nowrap; }
+.verdict { position: absolute; left: 49.5%; font-size: .8em; font-weight: 700; white-space: nowrap; }
+
+/* scene 4: matching */
+.s4 .cols { position: absolute; inset: 14cqw 5cqw 8cqw; display: grid; grid-template-columns: 1fr 1.35fr 1fr; gap: 2cqw; align-items: start; }
+.box { border: 1px solid var(--line); border-radius: 10px; padding: .7em .8em; }
+.box.strong { border: 2px solid var(--indigo); }
+.box h4 { margin: 0 0 .35em; font-size: 1em; }
+.box p { margin: 0; color: var(--muted); font-size: .86em; }
+.row { display: flex; justify-content: space-between; gap: .6em; font-family: var(--mono); font-size: .74em; padding: .25em 0; border-bottom: 1px solid var(--line); }
+.row > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+.row:last-child { border-bottom: 0; }
+.row .v { display: inline-flex; align-items: center; gap: .35em; white-space: nowrap; }
+.stack { display: grid; gap: 1.2cqw; }
+
+/* scene 5: report */
+.s5 .cols { position: absolute; inset: 14cqw 5cqw 8cqw; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1.6cqw; }
+.col { border-top: 3px solid var(--indigo); padding-top: .5em; display: grid; gap: .55em; align-content: start; }
+.col.bad { border-color: var(--bad); color: inherit; } .col.warn { border-color: var(--warn); color: inherit; }
+.col h4 { margin: 0; font-size: 1em; }
+.item { font-size: .84em; background: var(--chip); border-radius: 8px; padding: .45em .6em; }
+.item .mono { font-size: .95em; }
+.sev { font-family: var(--mono); font-size: .8em; font-weight: 600; letter-spacing: .04em; }
+
+/* scene 6: exit codes */
+.s6 { display: grid; align-content: center; gap: 2cqw; }
+.codes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1.6cqw; }
+.code { border: 1px solid var(--line); border-radius: 12px; padding: .8em; }
+.code .n { font-family: var(--mono); font-weight: 600; font-size: 2.2em; line-height: 1; }
+.code.hl { border: 2px solid var(--warn); }
+.end { display: flex; flex-wrap: wrap; align-items: center; gap: .6em 1.2em; }
+.cmd { font-family: var(--mono); background: var(--chip); border-radius: 8px; padding: .35em .7em; }
+
+/* caption bar inside the screen */
+.caption { position: absolute; left: 0; right: 0; bottom: 0; padding: .55em 6cqw; font-size: .9em; color: var(--muted); border-top: 1px solid var(--line); background: var(--stage); }
+
+/* ---------- controls ---------- */
+.controls { display: grid; grid-template-columns: auto auto 1fr auto auto; align-items: center; gap: 10px 14px; }
+button, .seg button { font: inherit; color: var(--ink); background: var(--stage); border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px; cursor: pointer; }
+button:hover { border-color: var(--indigo); }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--indigo); outline-offset: 2px; }
+#play { background: var(--indigo); color: var(--stage); border-color: var(--indigo); min-width: 96px; font-weight: 700; }
+#time { font-family: var(--mono); font-variant-numeric: tabular-nums; color: var(--muted); font-size: 14px; }
+#scrub { width: 100%; accent-color: var(--indigo); }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
+.seg button { border: 0; border-radius: 0; padding: 6px 12px; }
+.seg button[aria-pressed="true"] { background: var(--indigo); color: var(--stage); }
+.chapters { display: flex; flex-wrap: wrap; gap: 8px; }
+.chapters button { font-size: 13px; padding: 5px 12px; }
+.chapters button[aria-current="true"] { border-color: var(--indigo); color: var(--indigo); font-weight: 700; }
+
+/* ---------- try it ---------- */
+.try { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.card { background: var(--stage); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; display: grid; gap: 10px; align-content: start; min-width: 0; }
+.card h2 { margin: 0; font-size: 17px; font-family: var(--display); font-weight: 700; }
+.card p { margin: 0; color: var(--muted); font-size: 14px; }
+.card label { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+select { font: inherit; color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; max-width: 100%; }
+.result { border-radius: 10px; padding: 10px 12px; background: var(--chip); font-size: 14px; }
+.result b { font-family: var(--mono); }
+.result.pass { box-shadow: inset 4px 0 0 var(--ok); }
+.result.block { box-shadow: inset 4px 0 0 var(--bad); }
+.result.warnr { box-shadow: inset 4px 0 0 var(--warn); }
+.note { font-size: 13px; color: var(--muted); }
+
+@media (max-width: 640px) {
+  .stage { aspect-ratio: 3 / 4; }
+}
+@container (max-width: 600px) {
+  .scene, .caption { font-size: 3.2cqw; }
+  .scene { padding: 6cqw 6cqw 14cqw; }
+  .big { font-size: 2.6em; }
+  .q { grid-template-columns: 1fr; gap: 3cqw; }
+  .s2 .grid { inset: 22cqw 6cqw 14cqw; grid-template-columns: 1fr; gap: 3cqw; align-content: start; }
+  .s3 .field { inset: 26cqw 4cqw 16cqw; }
+  .s3 .pc { width: 33%; }
+  .s3 .hosts { width: 36%; }
+  .s4 .cols { inset: 22cqw 5cqw 14cqw; grid-template-columns: 1fr; gap: 3cqw; }
+  .s4 .stack { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2cqw; }
+  .s4 .box p { display: none; }
+  .s4 .cols > .box:last-child { display: none; }
+  .s5 .cols { inset: 22cqw 5cqw 14cqw; grid-template-columns: 1fr; gap: 3cqw; align-content: start; }
+  .codes { gap: 2cqw; }
+}
+@media (max-width: 720px) {
+  .controls { grid-template-columns: auto auto 1fr; }
+  .controls .seg, .controls #restart { grid-row: 2; }
+  .try { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) { .a { will-change: auto; } }
+</style>
+</head>
+<body>
+
+<div class="wrap" id="app" data-lang="ja">
+  <header class="top">
+    <h1><span class="ja">mamori のしくみ</span><span class="en">How mamori works</span></h1>
+    <p><span class="ja">30秒で見る、読むだけの脆弱性スキャナの動き</span><span class="en">A read-only vulnerability scanner, in 30 seconds</span></p>
+  </header>
+
+  <div class="stage" id="stage" role="img" aria-label="mamori animation">
+    <!-- 1: three questions -->
+    <section class="scene s1" data-start="0" data-end="4.5">
+      <div class="mark"><span class="big">mamori</span><span class="kanji">守り</span></div>
+      <p class="h"><span class="ja">読むだけで調べる、脆弱性スキャナ</span><span class="en">A vulnerability scanner that only reads</span></p>
+      <div class="q">
+        <div><b><span class="ja">何を調べたか</span><span class="en">What was scanned</span></b><span class="ja">ファイル・パッケージ・実行環境</span><span class="en">files, packages, runtimes</span></div>
+        <div><b><span class="ja">何が問題か</span><span class="en">What is wrong</span></b><span class="ja">勧告の ID と直った版</span><span class="en">advisory IDs and the fix</span></div>
+        <div><b><span class="ja">何を読めなかったか</span><span class="en">What could not be read</span></b><span class="ja">黙って「問題なし」と言わない</span><span class="en">never a silent "all clear"</span></div>
+      </div>
+    </section>
+
+    <!-- 2: what it reads -->
+    <section class="scene s2" data-start="4.5" data-end="9.5">
+      <div class="a" data-at="0" data-fx="up"><div class="eyebrow">1 · input</div><p class="h"><span class="ja">3つの場所を読む</span><span class="en">It reads three places</span></p></div>
+      <div class="grid">
+        <div class="sources">
+          <div class="src a" data-at=".5" data-fx="left"><b><span class="ja">手元のフォルダ</span><span class="en">A folder</span></b><span class="mono">bun.lock · package-lock.json · uv.lock …</span></div>
+          <div class="src a" data-at="1.1" data-fx="left"><b><span class="ja">GitHub のリポジトリ</span><span class="en">GitHub repositories</span></b><span class="mono">owner/repo — <span class="ja">clone しない</span><span class="en">no clone</span></span></div>
+          <div class="src a" data-at="1.7" data-fx="left"><b><span class="ja">この PC の実行環境</span><span class="en">This machine</span></b><span class="mono">Node.js · Bun · Python · PHP</span></div>
+        </div>
+        <div class="core a" data-at="2.3" data-fx="pop">
+          <div class="name">mamori</div>
+          <div class="chips">
+            <span class="chip a" data-at="2.9" data-fx="fade"><span class="dot ok"></span><span class="ja">ロックファイルだけ落とす</span><span class="en">downloads lockfiles only</span></span>
+            <span class="chip a" data-at="3.3" data-fx="fade"><span class="dot ok"></span><span class="ja">GitHub へは GET だけ</span><span class="en">GET only to GitHub</span></span>
+            <span class="chip a" data-at="3.7" data-fx="fade"><span class="dot ok"></span><span class="ja">版を聞くだけ (node --version)</span><span class="en">only asks versions (node --version)</span></span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3: the gate -->
+    <section class="scene s3" data-start="9.5" data-end="15">
+      <div class="a" data-at="0" data-fx="up"><div class="eyebrow">2 · egress</div><p class="h"><span class="ja">すべての通信は1つの門を通る</span><span class="en">Every request passes one gate</span></p></div>
+      <div class="field">
+        <div class="pc a" data-at=".2" data-fx="fade">
+          <b><span class="ja">この PC</span><span class="en">This machine</span></b>
+          <div class="muted" style="font-size:.86em">mamori</div>
+          <div class="lock a" data-at="4" data-fx="pop"><span class="ok">●</span> <span class="ja">依存の一覧は外に出ない</span><span class="en">your package list stays here</span></div>
+        </div>
+        <div class="gate-label a" data-at=".3" data-fx="fade"><span class="ja">通信の門</span><span class="en">the gate</span></div>
+        <div class="gate a" data-at=".3" data-fx="fade"></div>
+        <div class="hosts">
+          <div class="host a" data-at=".4" data-fx="fade">api.github.com</div>
+          <div class="host a" data-at=".4" data-fx="fade">api.github.com</div>
+          <div class="host a" data-at=".4" data-fx="fade">example.com</div>
+        </div>
+        <div class="pkt" data-pkt data-at=".9" data-y="16.6" data-pass="1">GET</div>
+        <div class="verdict ok a" data-at="1.9" data-fx="fade" style="top:calc(16.6% + 2.2em)"><span class="ja">通す(読むだけ)</span><span class="en">allowed (read)</span></div>
+        <div class="pkt" data-pkt data-at="1.7" data-y="50" data-pass="0">POST</div>
+        <div class="verdict bad a" data-at="2.5" data-fx="fade" style="top:calc(50% + 2.2em)"><span class="ja">止める(書き込み)</span><span class="en">blocked (write)</span></div>
+        <div class="pkt" data-pkt data-at="2.5" data-y="83.3" data-pass="0">GET</div>
+        <div class="verdict bad a" data-at="3.3" data-fx="fade" style="top:calc(83.3% + 2.2em)"><span class="ja">止める(一覧にない宛先)</span><span class="en">blocked (not on the list)</span></div>
+      </div>
+    </section>
+
+    <!-- 4: local matching -->
+    <section class="scene s4" data-start="15" data-end="20.5">
+      <div class="a" data-at="0" data-fx="up"><div class="eyebrow">3 · match</div><p class="h"><span class="ja">公開データを落として、手元で照らす</span><span class="en">Download public data, match locally</span></p></div>
+      <div class="cols">
+        <div class="stack">
+          <div class="box a" data-at=".4" data-fx="left"><h4>OSV DB</h4><p><span class="ja">HEAD で中身を比べ、変わったときだけ落とす</span><span class="en">HEAD first; download only when it changed</span></p></div>
+          <div class="box a" data-at=".9" data-fx="left"><h4>Patch the Planet</h4><p><span class="ja">人が確かめた、直った版の一覧</span><span class="en">reviewed list of fixed versions</span></p></div>
+          <div class="box a" data-at="1.4" data-fx="left"><h4>CISA KEV</h4><p><span class="ja">実際に悪用中のものに印</span><span class="en">marks what is exploited</span></p></div>
+        </div>
+        <div class="box strong a" data-at="1.6" data-fx="pop">
+          <h4><span class="ja">ロックファイルの中身</span><span class="en">Inside the lockfiles</span></h4>
+          <div class="row"><span>@tanstack/react-start 1.167.50</span><span class="v bad a" data-at="2.4" data-fx="fade"><span class="dot"></span>critical</span></div>
+          <div class="row"><span>seroval 1.5.2</span><span class="v bad a" data-at="2.9" data-fx="fade"><span class="dot"></span>critical</span></div>
+          <div class="row"><span>brotli 1.2.0</span><span class="v bad a" data-at="3.4" data-fx="fade"><span class="dot"></span>critical</span></div>
+          <div class="row"><span>requests 2.32.3</span><span class="v warn a" data-at="3.9" data-fx="fade"><span class="dot"></span>medium</span></div>
+        </div>
+        <div class="box a" data-at="2" data-fx="right"><h4><span class="ja">照合は OSV-Scanner</span><span class="en">Matching by OSV-Scanner</span></h4><p><span class="ja">版が当たるかの判断は Google の部品をそのまま使う</span><span class="en">Google's library decides; mamori decides what to read and report</span></p></div>
+      </div>
+    </section>
+
+    <!-- 5: report -->
+    <section class="scene s5" data-start="20.5" data-end="26.5">
+      <div class="a" data-at="0" data-fx="up"><div class="eyebrow">4 · report</div><p class="h"><span class="ja">報告はいつも3つに分ける</span><span class="en">Every report has three parts</span></p></div>
+      <div class="cols">
+        <div class="col a" data-at=".4" data-fx="up">
+          <h4><span class="ja">調べたもの</span><span class="en">Scanned</span></h4>
+          <div class="item a" data-at=".9" data-fx="fade"><span class="mono">web/package-lock.json</span><br>npm · 3</div>
+          <div class="item a" data-at="1.2" data-fx="fade"><span class="mono">api/requirements.txt</span><br>PyPI · 2</div>
+        </div>
+        <div class="col bad a" data-at="1.6" data-fx="up">
+          <h4><span class="ja">問題</span><span class="en">Findings</span></h4>
+          <div class="item a" data-at="2.1" data-fx="fade"><span class="sev bad">CRITICAL</span> <span class="mono">seroval 1.5.2</span><br><span class="ja">直った版</span><span class="en">fixed in</span> 1.5.3 · GHSA-mv8w</div>
+          <div class="item a" data-at="2.5" data-fx="fade"><span class="sev bad">CRITICAL</span> <span class="mono">react-start 1.167.50</span><br><span class="ja">直った版</span><span class="en">fixed in</span> 1.168.60 · GHSA-qx66</div>
+        </div>
+        <div class="col warn a" data-at="3" data-fx="up">
+          <h4><span class="ja">読めなかったもの</span><span class="en">Blind spots</span></h4>
+          <div class="item a" data-at="3.5" data-fx="fade"><span class="mono">worker/package.json</span><br><span class="ja">ロックファイルが無く、版が分からない</span><span class="en">no lockfile, versions unknown</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 6: exit codes -->
+    <section class="scene s6" data-start="26.5" data-end="30">
+      <div class="a" data-at="0" data-fx="up"><div class="eyebrow">5 · exit code</div><p class="h"><span class="ja">「0件」と「安全」を分ける</span><span class="en">"Nothing found" is not "safe"</span></p></div>
+      <div class="codes">
+        <div class="code a" data-at=".4" data-fx="up"><div class="n ok">0</div><span class="ja">問題なし・読めなかったものなし</span><span class="en">clean, nothing unread</span></div>
+        <div class="code a" data-at=".7" data-fx="up"><div class="n bad">1</div><span class="ja">問題あり</span><span class="en">findings</span></div>
+        <div class="code hl a" data-at="1" data-fx="up"><div class="n warn">3</div><span class="ja">0件だが読めなかったものあり</span><span class="en">nothing found, something unread</span></div>
+      </div>
+      <div class="end a" data-at="1.8" data-fx="fade"><span class="cmd">mamori scan</span><span class="mono muted">github.com/jun-omise/mamori</span></div>
+    </section>
+
+    <div class="caption" id="caption" aria-live="polite"></div>
+  </div>
+
+  <div class="controls">
+    <button id="play" type="button" aria-label="Play or pause"><span class="ja">一時停止</span><span class="en">Pause</span></button>
+    <span id="time">0:00 / 0:30</span>
+    <input id="scrub" type="range" min="0" max="30" step="0.05" value="0" aria-label="Position">
+    <button id="restart" type="button"><span class="ja">最初から</span><span class="en">Restart</span></button>
+    <span class="seg" role="group" aria-label="Language"><button type="button" id="lang-ja" aria-pressed="true">日本語</button><button type="button" id="lang-en" aria-pressed="false">English</button></span>
+  </div>
+  <nav class="chapters" id="chapters" aria-label="Chapters"></nav>
+
+  <div class="try">
+    <section class="card">
+      <h2><span class="ja">門に通してみる</span><span class="en">Try the gate</span></h2>
+      <p><span class="ja">mamori のコードにある宛先の一覧と同じ決まりで判定します。</span><span class="en">Decided with the same allow list as mamori's code.</span></p>
+      <label for="req"><span class="ja">要求</span><span class="en">Request</span>
+        <select id="req">
+          <option value="GET api.github.com">GET api.github.com</option>
+          <option value="POST api.github.com">POST api.github.com</option>
+          <option value="DELETE api.github.com">DELETE api.github.com</option>
+          <option value="GET osv-vulnerabilities.storage.googleapis.com">GET osv-vulnerabilities.storage.googleapis.com</option>
+          <option value="POST api.osv.dev">POST api.osv.dev</option>
+          <option value="GET www.cisa.gov">GET www.cisa.gov</option>
+          <option value="GET duckduckgo.com">GET duckduckgo.com</option>
+        </select>
+      </label>
+      <label><input type="checkbox" id="online"> <span class="mono">--online</span></label>
+      <label><input type="checkbox" id="offline"> <span class="mono">--offline</span></label>
+      <div class="result" id="gate-out" aria-live="polite"></div>
+    </section>
+    <section class="card">
+      <h2><span class="ja">終了コードを決めてみる</span><span class="en">Work out the exit code</span></h2>
+      <p><span class="ja">スキャンの結果を選ぶと、mamori が返す終了コードが出ます。</span><span class="en">Pick what a scan found to see the code mamori returns.</span></p>
+      <label><input type="checkbox" id="has-find"> <span class="ja">問題が見つかった</span><span class="en">findings</span></label>
+      <label><input type="checkbox" id="has-blind" checked> <span class="ja">読めなかったものがある</span><span class="en">blind spots</span></label>
+      <div class="result" id="exit-out" aria-live="polite"></div>
+      <p class="note"><span class="ja">2 は mamori 自身が動けなかったときです。</span><span class="en">2 means mamori itself could not run.</span></p>
+    </section>
+  </div>
+  <p class="note"><a href="https://github.com/jun-omise/mamori">github.com/jun-omise/mamori</a> · Apache-2.0</p>
+</div>
+
+<script>
+(() => {
+  const DURATION = 30;
+  const app = document.getElementById('app');
+  const scenes = [...document.querySelectorAll('.scene')];
+  const playBtn = document.getElementById('play');
+  const scrub = document.getElementById('scrub');
+  const timeEl = document.getElementById('time');
+  const caption = document.getElementById('caption');
+  const chaptersEl = document.getElementById('chapters');
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  const CHAPTERS = [
+    { ja: '3つの問い', en: 'Three questions', cap: { ja: 'mamori は、調べたもの・問題・読めなかったものを、いつも分けて答えます。', en: 'mamori always answers three things: what it scanned, what is wrong, what it could not read.' } },
+    { ja: '読むもの', en: 'What it reads', cap: { ja: 'フォルダ・GitHub・この PC を読みます。GitHub は clone せず、ロックファイルだけを読みます。', en: 'A folder, GitHub, and this machine. On GitHub it reads lockfiles only, without cloning.' } },
+    { ja: '通信の門', en: 'The gate', cap: { ja: 'GitHub へは GET だけ。一覧にない宛先には届きません。--offline なら通信は0回。', en: 'GET only to GitHub. Hosts not on the list are unreachable. --offline makes no requests.' } },
+    { ja: '手元で照合', en: 'Local matching', cap: { ja: '公開の DB を落として手元で照らします。依存の一覧はどこにも送りません。', en: 'Public databases are downloaded and matched here. Your dependency list goes nowhere.' } },
+    { ja: '3つの報告', en: 'The report', cap: { ja: '問題には直った版を、読めなかったものには理由を書きます。', en: 'Findings come with the fixed version; blind spots come with the reason.' } },
+    { ja: '終了コード', en: 'Exit codes', cap: { ja: '読めなかったものがあれば 0 ではなく 3。CI でも「問題なし」と取り違えません。', en: 'Blind spots return 3, not 0, so CI never mistakes them for a clean run.' } },
+  ];
+
+  const params = new URLSearchParams(location.search);
+  let lang = (navigator.language || '').toLowerCase().startsWith('ja') ? 'ja' : 'en';
+  try { const saved = localStorage.getItem('mamori-how-lang'); if (saved === 'en' || saved === 'ja') lang = saved; } catch (e) {}
+  if (params.get('lang') === 'en' || params.get('lang') === 'ja') lang = params.get('lang');
+  if (params.get('theme') === 'dark' || params.get('theme') === 'light') document.documentElement.dataset.theme = params.get('theme');
+  let t = 0, playing = !reduce, last = null;
+
+  const ease = x => x <= 0 ? 0 : x >= 1 ? 1 : 1 - Math.pow(1 - x, 3);
+  const clamp01 = x => Math.max(0, Math.min(1, x));
+
+  function sceneIndexAt(time) {
+    for (let i = 0; i < scenes.length; i++) {
+      const s = +scenes[i].dataset.start, e = +scenes[i].dataset.end;
+      if (time >= s && (time < e || i === scenes.length - 1)) return i;
+    }
+    return 0;
+  }
+
+  function renderScene(sc, local, len) {
+    const fadeIn = sc.dataset.start === '0' ? 1 : clamp01(local / .35);
+    const fadeOut = sc.dataset.end === String(DURATION) ? 1 : clamp01((len - local) / .35);
+    sc.style.opacity = Math.min(fadeIn, fadeOut);
+    sc.querySelectorAll('.a').forEach(el => {
+      const at = +el.dataset.at || 0;
+      const e = reduce ? 1 : ease((local - at) / .45);
+      const fx = el.dataset.fx || 'fade';
+      const d = (1 - e);
+      let tr = '';
+      if (fx === 'up') tr = `translateY(${d * 1.2}em)`;
+      else if (fx === 'left') tr = `translateX(${-d * 1.6}em)`;
+      else if (fx === 'right') tr = `translateX(${d * 1.6}em)`;
+      else if (fx === 'pop') tr = `scale(${.94 + .06 * e})`;
+      el.style.opacity = e;
+      el.style.transform = tr;
+    });
+    // packets in the gate scene: travel to the gate; allowed ones continue to the host
+    sc.querySelectorAll('[data-pkt]').forEach(p => {
+      const at = +p.dataset.at, pass = p.dataset.pass === '1';
+      const k = reduce ? 1 : clamp01((local - at) / 1.0);
+      const toGate = ease(clamp01(k / (pass ? .5 : 1)));
+      const beyond = pass ? ease(clamp01((k - .5) / .5)) : 0;
+      const gateX = 38, hostX = 58, startX = 8;
+      const x = startX + (gateX - startX) * toGate + (hostX - gateX) * beyond;
+      p.style.left = x + '%';
+      p.style.top = p.dataset.y + '%';
+      p.style.opacity = local < at ? 0 : 1;
+      p.style.outline = (!pass && toGate >= 1) ? '2px solid var(--bad)' : (pass && beyond >= 1 ? '2px solid var(--ok)' : 'none');
+    });
+  }
+
+  function render() {
+    const i = sceneIndexAt(t);
+    scenes.forEach((sc, j) => {
+      const on = j === i;
+      sc.classList.toggle('on', on);
+      if (on) {
+        const s = +sc.dataset.start, e = +sc.dataset.end;
+        renderScene(sc, t - s, e - s);
+      }
+    });
+    caption.textContent = CHAPTERS[i].cap[lang];
+    scrub.value = t.toFixed(2);
+    const fmt = x => `${Math.floor(x / 60)}:${String(Math.floor(x % 60)).padStart(2, '0')}`;
+    timeEl.textContent = `${fmt(t)} / ${fmt(DURATION)}`;
+    [...chaptersEl.children].forEach((b, j) => b.setAttribute('aria-current', j === i ? 'true' : 'false'));
+  }
+
+  function setPlaying(p) {
+    playing = p;
+    playBtn.querySelector('.ja').textContent = p ? '一時停止' : '再生';
+    playBtn.querySelector('.en').textContent = p ? 'Pause' : 'Play';
+    last = null;
+    if (p) requestAnimationFrame(tick);
+  }
+
+  function tick(now) {
+    if (!playing) return;
+    if (last !== null) {
+      t += (now - last) / 1000;
+      if (t >= DURATION) { t = DURATION; render(); setPlaying(false); return; }
+    }
+    last = now;
+    render();
+    requestAnimationFrame(tick);
+  }
+
+  function seek(x) { t = Math.max(0, Math.min(DURATION, x)); last = null; render(); }
+
+  CHAPTERS.forEach((c, j) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.innerHTML = `<span class="ja">${j + 1}. ${c.ja}</span><span class="en">${j + 1}. ${c.en}</span>`;
+    b.addEventListener('click', () => seek(+scenes[j].dataset.start + (j === 0 ? 0 : .05)));
+    chaptersEl.appendChild(b);
+  });
+
+  playBtn.addEventListener('click', () => { if (t >= DURATION) seek(0); setPlaying(!playing); });
+  document.getElementById('restart').addEventListener('click', () => { seek(0); setPlaying(true); });
+  scrub.addEventListener('input', () => { seek(+scrub.value); });
+  document.addEventListener('keydown', e => {
+    if (e.target.closest('input, select, textarea')) return;
+    if (e.key === ' ') { e.preventDefault(); if (t >= DURATION) seek(0); setPlaying(!playing); }
+    if (e.key === 'ArrowRight') seek(t + 2);
+    if (e.key === 'ArrowLeft') seek(t - 2);
+  });
+
+  function setLang(l) {
+    lang = l;
+    app.dataset.lang = l;
+    document.documentElement.lang = l;
+    document.getElementById('lang-ja').setAttribute('aria-pressed', l === 'ja');
+    document.getElementById('lang-en').setAttribute('aria-pressed', l === 'en');
+    try { localStorage.setItem('mamori-how-lang', l); } catch (e) {}
+    render(); gate(); exitCode();
+  }
+  document.getElementById('lang-ja').addEventListener('click', () => setLang('ja'));
+  document.getElementById('lang-en').addEventListener('click', () => setLang('en'));
+
+  // The gate: the same rules as internal/egress/egress.go
+  const RULES = [
+    { host: 'osv-vulnerabilities.storage.googleapis.com', methods: ['GET', 'HEAD'] },
+    { host: 'api.github.com', methods: ['GET', 'HEAD'] },
+    { host: 'raw.githubusercontent.com', methods: ['GET', 'HEAD'] },
+    { host: 'www.cisa.gov', methods: ['GET', 'HEAD'] },
+    { host: 'nodejs.org', methods: ['GET', 'HEAD'] },
+    { host: 'endoflife.date', methods: ['GET', 'HEAD'] },
+    { host: 'api.osv.dev', methods: ['GET', 'HEAD', 'POST'], onlineOnly: true },
+  ];
+  const reqEl = document.getElementById('req'), onlineEl = document.getElementById('online'), offlineEl = document.getElementById('offline');
+  function check(method, host, online, offline) {
+    if (offline) return { ok: false, why: { ja: '--offline では、どこにも通信しません。', en: '--offline makes no requests at all.' } };
+    const r = RULES.find(x => x.host === host);
+    if (!r) return { ok: false, why: { ja: '一覧にない宛先には届きません。', en: 'Hosts not on the allow list are unreachable.' } };
+    if (r.onlineOnly && !online) return { ok: false, why: { ja: 'OSV の API は --online のときだけ使います(パッケージ名と版を送るため)。', en: 'The OSV API is used only with --online, because it sends package names and versions.' } };
+    if (!r.methods.includes(method)) return { ok: false, why: { ja: `${host} へは ${r.methods.join('・')} だけを通します。`, en: `${host} only takes ${r.methods.join(', ')}.` } };
+    return { ok: true, why: { ja: '一覧にある宛先と方法なので通します。報告の「通信した宛先」にも載ります。', en: 'Allowed host and method. It is listed under "Network contacts" in the report.' } };
+  }
+  function gate() {
+    const [method, host] = reqEl.value.split(' ');
+    if (onlineEl.checked && offlineEl.checked) {
+      const out = document.getElementById('gate-out');
+      out.className = 'result warnr';
+      out.innerHTML = lang === 'ja' ? '<b>使えない組み合わせ</b> — --online と --offline は同時に使えません(終了コード 2)。' : '<b>Not allowed together</b> — --online and --offline cannot be combined (exit code 2).';
+      return;
+    }
+    const v = check(method, host, onlineEl.checked, offlineEl.checked);
+    const out = document.getElementById('gate-out');
+    out.className = 'result ' + (v.ok ? 'pass' : 'block');
+    out.innerHTML = `<b>${v.ok ? (lang === 'ja' ? '通す' : 'Allowed') : (lang === 'ja' ? '止める' : 'Blocked')}</b> — ${v.why[lang]}`;
+  }
+  [reqEl, onlineEl, offlineEl].forEach(el => el.addEventListener('change', gate));
+
+  // Exit code: the same order as report.ExitCode
+  const findEl = document.getElementById('has-find'), blindEl = document.getElementById('has-blind');
+  function exitCode() {
+    const code = findEl.checked ? 1 : blindEl.checked ? 3 : 0;
+    const text = {
+      0: { ja: '問題なし・読めなかったものなし。', en: 'Clean: nothing found, nothing unread.' },
+      1: { ja: '問題あり。読めなかったものがあっても 1 が先です。', en: 'Findings. Takes precedence over blind spots.' },
+      3: { ja: '問題は0件。でも読めなかったものがあるので「問題なし」とは言いません。', en: 'Nothing found, but something could not be read, so this is not a clean result.' },
+    }[code];
+    const out = document.getElementById('exit-out');
+    out.className = 'result ' + (code === 0 ? 'pass' : code === 1 ? 'block' : 'warnr');
+    out.innerHTML = `<b>exit ${code}</b> — ${text[lang]}`;
+  }
+  [findEl, blindEl].forEach(el => el.addEventListener('change', exitCode));
+
+  window.__mamoriSeek = x => { setPlaying(false); seek(x); };
+  setLang(lang);
+  if (params.has('t')) { setPlaying(false); seek(parseFloat(params.get('t')) || 0); }
+  else if (reduce) { t = 0; render(); setPlaying(false); } else { setPlaying(true); }
+})();
+</script>
+</body>
+</html>
