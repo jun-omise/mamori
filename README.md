@@ -258,7 +258,7 @@ checks, Patch the Planet data, the CISA KEV mark, blind-spot reporting, and an e
 Because mamori could not judge something: a manifest with no lockfile, a file it could not parse, a
 missing database, or a repository GitHub could not list in full. Each line says what to do.
 
-### Why is the file about 60 MB?
+### Why is the file about 40 MB?
 
 It contains OSV-Scanner's readers for many ecosystems and needs no other runtime.
 
