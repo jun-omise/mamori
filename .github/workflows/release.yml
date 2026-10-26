@@ -23,7 +23,7 @@ jobs:
         with:
           go-version-file: go.mod
       - run: go test ./...
-      - name: Build (reproducible: no cgo, trimmed paths, no build id)
+      - name: "Build (reproducible: no cgo, trimmed paths, no build id)"
         run: |
           set -euo pipefail
           mkdir dist
