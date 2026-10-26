@@ -515,7 +515,7 @@ func appendOnce(s []string, v string) []string {
 
 func summarizeDisclosures(rep *report.Report, data overlay.Data, checked map[string][]string) {
 	for _, d := range data.Disclosures {
-		s := report.Disclosure{ID: d.ID, Title: d.Title, CVEs: d.CVEs, URL: d.URL, Checked: checked[d.ID]}
+		s := report.Disclosure{ID: d.ID, Title: d.Title, CVEs: d.CVEs, URL: d.URL, Checked: append([]string{}, checked[d.ID]...), Manual: []string{}}
 		done := map[string]bool{}
 		for _, c := range s.Checked {
 			done[c] = true
